@@ -4,6 +4,8 @@ import math     # for trigonometric evaluations
 import json     # Used for reading and writing JSON files (saving and loading setups)
 import os       # Used to get base filename and file and directory handling
 import sys
+import yaml
+import subprocess
 
 import rospy
 import roslaunch
@@ -142,6 +144,24 @@ class GuiMainWindow(gui_launcher_node.Ui_MainWindow, QtGui.QMainWindow):
         self.comboBoxDockingStationID.setStatusTip("Select the id of the docking station which you wish to edit its properties of.")
         #endregion
 
+        #region ADDITIONAL SETTINGS TAB
+        # Connect gui widgets
+        self.btnLogsFolder.clicked.connect(self.select_folder)
+        self.btnMqttTopics.clicked.connect(self.open_mqtt_params_file)
+        self.btnGazeboWorld.clicked.connect(self.select_gazebo_world)
+        self.btnRVizMap.clicked.connect(self.select_rviz_map)
+        self.btnLocationsJson.clicked.connect(self.open_locations_json_file)
+
+        # Set default values for some settings
+        self.doubleSpinBoxLogInterval.setValue(1)
+        self.logs_folder = rospkg.RosPack().get_path("rooster_fleet_manager") + "/data_logs"
+        self.labelLogsFolder.setText("/data_logs")
+        self.gazebo_world = rospkg.RosPack().get_path("rooster_fleet_manager") + "/worlds/vartahall.world"
+        self.labelGazeboWorld.setText("vartahall.world")
+        self.rviz_map = rospkg.RosPack().get_path("rooster_fleet_manager") + "/maps/vartahall_map.yaml"
+        self.labelRVizMap.setText("vartahall_map.yaml")
+        #endregion
+
         #region File menu
         self.actionNew.setStatusTip("Clear current setup and start with a fresh one. Note: Any unsaved changes will be lost!")
         self.actionNew.triggered.connect(self.new_file)
@@ -161,7 +181,7 @@ class GuiMainWindow(gui_launcher_node.Ui_MainWindow, QtGui.QMainWindow):
     def populate_docking_station_dict(self):
         """Populate the docking station dictionary with DockingStation class instances."""
         self.docking_station_dict = {
-            "ds01": DockingStation('ds01',Pose2d(9.0, -5.5, math.pi/2.0)),
+            "ds01": DockingStation('ds01',Pose2d(13.5, 5.12, math.pi/2.0)),
             "ds02": DockingStation('ds02',Pose2d(4.0, 0.5, math.pi/1.0)),
             "ds03": DockingStation('ds03',Pose2d(1.0, 5.5, math.pi*1.5))
         }
@@ -237,8 +257,6 @@ class GuiMainWindow(gui_launcher_node.Ui_MainWindow, QtGui.QMainWindow):
                 id_name = "rdg"
             elif robot_type == "Husky":
                 id_name = "hsk"
-            elif robot_type == "ROSbot":
-                id_name = "rsb"
             robot_id = id_name+id_num
 
             # Iterate over all existing (top level) items (a.k.a. robots) in the robotTree to check if the new Robot ID is unique.
@@ -254,7 +272,7 @@ class GuiMainWindow(gui_launcher_node.Ui_MainWindow, QtGui.QMainWindow):
 
             docking_station = self.comboBoxDockingStationLaunch.currentText()
             navigation = "SFM-MPDM" if self.checkBoxSFMMPDM.isChecked() else "move_base"
-            # print("Adding robot: " + robot_id + " | " + navigation + " | " + robot_type + " | " + docking_station)
+            print("Adding robot: " + robot_id + " | " + navigation + " | " + robot_type + " | " + docking_station)
             if is_unique:
                 robot_item = QtGui.QTreeWidgetItem([robot_id, navigation, robot_type, docking_station])
                 self.robotTree.addTopLevelItem(robot_item)
@@ -296,6 +314,8 @@ class GuiMainWindow(gui_launcher_node.Ui_MainWindow, QtGui.QMainWindow):
         self.checkBoxRviz.setEnabled(False)
         self.checkBoxGazeboGUI.setEnabled(False)
         self.checkBoxFleetManager.setEnabled(False)
+        self.checkBoxDataLogger.setEnabled(False)
+        self.checkBoxMQTT.setEnabled(False)
         root = self.robotTree.invisibleRootItem()
         child_count = root.childCount()
         is_unique = True
@@ -340,6 +360,12 @@ class GuiMainWindow(gui_launcher_node.Ui_MainWindow, QtGui.QMainWindow):
         elif assignment_issue:
             # Docking station over max capacity, throw error.
             QtGui.QMessageBox.warning(self, "Maximum capacity exceeded!", "Docking station "+ ds_issue +" maxiumum capacity is being exceeded, unable to launch the current setup.")
+        elif self.gazebo_world == "" or self.rviz_map == "":
+            # Gazebo world and/or RViz map not defined, throw error.
+            QtGui.QMessageBox.warning(self, "No Gazebo world and/or RViz map chosen!", "You must choose the Gazebo world and RViz map in the 'Additional settings' tab before you can launch.")
+        elif not os.path.exists(self.gazebo_world) or not os.path.exists(self.rviz_map):
+            # .world and/or .yaml file not found.
+            QtGui.QMessageBox.warning(self, "Gazebo .world file and/or RViz .yaml file does not exist!", "Make sure the files chosen in the 'Additional settings' exist before you can launch.")
         else:
             global launch_status
             launch_status = launchStatus.LAUNCHED
@@ -365,6 +391,8 @@ class GuiMainWindow(gui_launcher_node.Ui_MainWindow, QtGui.QMainWindow):
         self.checkBoxRviz.setEnabled(True)
         self.checkBoxGazeboGUI.setEnabled(True)
         self.checkBoxFleetManager.setEnabled(True)
+        self.checkBoxDataLogger.setEnabled(True)
+        self.checkBoxMQTT.setEnabled(True)
         root = self.robotTree.invisibleRootItem()
         child_count = root.childCount()
         is_unique = True
@@ -443,6 +471,17 @@ class GuiMainWindow(gui_launcher_node.Ui_MainWindow, QtGui.QMainWindow):
                 self.comboBoxDockingStationID.setCurrentIndex(0)
                 self.spinBoxRobotID.setValue(1)
                 self.checkBoxSFMMPDM.setChecked(False)
+                self.doubleSpinBoxLogInterval.setValue(1)
+                self.editBrokerHost.setText("localhost")
+                self.spinBoxBrokerPort.setValue(1883)
+                self.logs_folder = rospkg.RosPack().get_path("rooster_fleet_manager") + "/data_logs"
+                self.labelLogsFolder.setText("/data_logs")
+                self.editAccountUsername.setText("")
+                self.editAccountPassword.setText("")
+                self.gazebo_world = rospkg.RosPack().get_path("rooster_fleet_manager") + "/worlds/ridgeback_race.world"
+                self.labelGazeboWorld.setText("ridgeback_race.world")
+                self.rviz_map = rospkg.RosPack().get_path("rooster_fleet_manager") + "/maps/ridgeback_map.yaml"
+                self.labelRVizMap.setText("ridgeback_map.yaml")
 
                 # Clear docking station objects from dict, populate dict with new docking station objects, update GUI accordingly
                 self.docking_station_dict.clear()
@@ -510,7 +549,17 @@ class GuiMainWindow(gui_launcher_node.Ui_MainWindow, QtGui.QMainWindow):
                 
                 # Docking station tab
                 unicode(self.comboBoxDockingStationID.objectName()): unicode(self.comboBoxDockingStationID.itemText(self.comboBoxDockingStationID.currentIndex())),
-                "docking_stations": savedata_docking_station_dict
+                "docking_stations": savedata_docking_station_dict,
+
+                # Additional settings tab
+                unicode(self.doubleSpinBoxLogInterval.objectName()): self.doubleSpinBoxLogInterval.value(),
+                unicode(self.editBrokerHost.objectName()): unicode(self.editBrokerHost.text()),
+                unicode(self.spinBoxBrokerPort.objectName()): self.spinBoxBrokerPort.value(),
+                unicode(self.editAccountUsername.objectName()): unicode(self.editAccountUsername.text()),
+                unicode(self.editAccountPassword.objectName()): unicode(self.editAccountPassword.text()),
+                "logs_folder": self.logs_folder,
+                "gazebo_world": self.gazebo_world,
+                "rviz_map": self.rviz_map
             }
             with open(filepath, 'w') as json_savefile:
                 json.dump(savedata_dict, json_savefile, indent=4)
@@ -575,6 +624,27 @@ class GuiMainWindow(gui_launcher_node.Ui_MainWindow, QtGui.QMainWindow):
                             self.set_docking_stations_from_JSON(value)
                         elif key == unicode(self.comboBoxDockingStationID.objectName()):
                             self.set_combobox_from_JSON(self.comboBoxDockingStationID, value)
+
+                        # Additional settings tab
+                        elif key == unicode(self.doubleSpinBoxLogInterval.objectName()):
+                            self.doubleSpinBoxLogInterval.setValue(value)
+                        elif key == unicode(self.editBrokerHost.objectName()):
+                            self.editBrokerHost.setText(value)
+                        elif key == unicode(self.spinBoxBrokerPort.objectName()):
+                            self.spinBoxBrokerPort.setValue(value)
+                        elif key == unicode(self.editAccountUsername.objectName()):
+                            self.editAccountUsername.setText(value)
+                        elif key == unicode(self.editAccountPassword.objectName()):
+                            self.editAccountPassword.setText(value)
+                        elif key == "logs_folder":
+                            self.logs_folder = value
+                            self.labelLogsFolder.setText(os.path.basename(value))
+                        elif key == "gazebo_world":
+                            self.gazebo_world = value
+                            self.labelGazeboWorld.setText(os.path.basename(value))
+                        elif key == "rviz_map":
+                            self.rviz_map = value
+                            self.labelRVizMap.setText(os.path.basename(value))
                         
                     self.unsaved_changes_inactive()
             else:
@@ -630,6 +700,52 @@ class GuiMainWindow(gui_launcher_node.Ui_MainWindow, QtGui.QMainWindow):
 
     #endregion
 
+    #region Methods for widgets in Additional settings tab
+    # Folder picker
+    def select_folder(self):
+        folder = QtGui.QFileDialog.getExistingDirectory(
+            self,
+            "Select folder",
+            self.logs_folder,
+            QtGui.QFileDialog.ShowDirsOnly | QtGui.QFileDialog.DontResolveSymlinks
+        )
+        if folder:
+            self.logs_folder = unicode(folder)
+            self.labelLogsFolder.setText(os.path.basename(folder))
+    def open_mqtt_params_file(self):
+        file_path = r.get_path("rooster_fleet_manager") + "/config/mqtt_bridge_configs.yaml"
+        try:
+            subprocess.Popen(['gedit', file_path])
+        except Exception as e:
+            rospy.logerr(e)
+    def select_gazebo_world(self):
+        file_path = QtGui.QFileDialog.getOpenFileName(
+            self, 
+            "Choose Gazebo world", 
+            self.gazebo_world, 
+            ".world file (*.world)"
+        )
+        if file_path:
+            self.gazebo_world = unicode(file_path)
+            self.labelGazeboWorld.setText(os.path.basename(file_path))
+    def select_rviz_map(self):
+        file_path = QtGui.QFileDialog.getOpenFileName(
+            self, 
+            "Choose RViz map", 
+            self.rviz_map, 
+            ".yaml file (*.yaml)"
+        )
+        if file_path:
+            self.rviz_map = unicode(file_path)
+            self.labelRVizMap.setText(os.path.basename(file_path))
+    def open_locations_json_file(self):
+        file_path = r.get_path("multi_robot_sim") + "/scripts/JSONtoRosparam/locations.JSON"
+        try:
+            subprocess.Popen(['gedit', file_path])
+        except Exception as e:
+            rospy.logerr(e)
+    #endregion
+
     def launch_nodes(self):
         """
         1. Prepares the launching of Gazebo.
@@ -645,7 +761,8 @@ class GuiMainWindow(gui_launcher_node.Ui_MainWindow, QtGui.QMainWindow):
         gui = True if self.checkBoxGazeboGUI.isChecked() else False
         use_sim_time = True
         headless = False 
-        world_name = r.get_path("ridgeback_gazebo")+'/worlds/ridgeback_race.world'
+        #world_name = r.get_path("rooster_fleet_manager")+'/worlds/vartahall.world'
+        world_name = self.gazebo_world
 
         # Creating instance of Gazebo class
         self.gzb = Gazebo(gui, use_sim_time, headless, world_name)
@@ -654,7 +771,8 @@ class GuiMainWindow(gui_launcher_node.Ui_MainWindow, QtGui.QMainWindow):
         self.gzb.launch(uuid)
 
         # Running the map server on the existing gzb.launch object
-        map_file = r.get_path("multi_ridgeback_nav") + '/maps/my_ridgeback_race.yaml'
+        #map_file = r.get_path("rooster_fleet_manager") + '/maps/vartahall_map.yaml'
+        map_file = self.rviz_map
         map_server_node = roslaunch.core.Node('map_server', 'map_server', name='map_server', args=map_file)
         self.gzb.launch.launch(map_server_node)
         #endregion
@@ -682,6 +800,40 @@ class GuiMainWindow(gui_launcher_node.Ui_MainWindow, QtGui.QMainWindow):
             self.fleet_manager_launch.parent = roslaunch.parent.ROSLaunchParent(uuid, [r.get_path("rooster_fleet_manager")+'/launch/fleet_manager.launch'])
             self.fleet_manager_launch.start()
 
+        # Data logger and MQTT
+        # Create YAML file for data logger and MQTT parameters
+        params = {
+            "data_logger": {
+                "logging_interval": self.doubleSpinBoxLogInterval.value(),
+                "logs_folder_path": self.logs_folder,
+            },
+            "mqtt": {
+                "client": {
+                    "protocol": 4,
+                },
+                "connection": {
+                    "host": unicode(self.editBrokerHost.text()),
+                    "port": self.spinBoxBrokerPort.value(),
+                    "keepalive": 60
+                },
+                "account": {
+                    "username": unicode(self.editAccountUsername.text()),
+                    "password": unicode(self.editAccountPassword.text())
+                }
+            }
+        }
+        with open(r.get_path("rooster_fleet_manager") + "/config/sim_configs.yaml", "w") as f:
+            yaml.safe_dump(params, f, default_flow_style=False)
+
+        if self.checkBoxDataLogger.isChecked():
+            self.data_logger_launch = roslaunch.scriptapi.ROSLaunch()
+            self.data_logger_launch.parent = roslaunch.parent.ROSLaunchParent(uuid, [r.get_path("rooster_fleet_manager")+'/launch/data_logger.launch'])
+            self.data_logger_launch.start()
+        if self.checkBoxMQTT.isChecked():
+            self.mqtt_launch = roslaunch.scriptapi.ROSLaunch()
+            self.mqtt_launch.parent = roslaunch.parent.ROSLaunchParent(uuid, [r.get_path("rooster_fleet_manager")+'/launch/mqtt.launch'])
+            self.mqtt_launch.start()
+
     def shutdown_nodes(self):
         """Shuts down the launched nodes, starting with robot nodes, ending with Gazebo."""
         print("Starting shutdown sequence.")
@@ -690,6 +842,10 @@ class GuiMainWindow(gui_launcher_node.Ui_MainWindow, QtGui.QMainWindow):
         self.gzb.launch.parent.shutdown()   # Shut down Gazebo, map server and Rviz
         if self.checkBoxFleetManager.isChecked():
             self.fleet_manager_launch.parent.shutdown()  # Shut down Fleet Manager. 
+        if self.checkBoxDataLogger.isChecked():        
+            self.data_logger_launch.parent.shutdown()  # Shut down Data logger.
+        if self.checkBoxMQTT.isChecked():
+            self.mqtt_launch.parent.shutdown() #Shut down MQTT
 
 if __name__ == '__main__':
     try:
@@ -720,7 +876,7 @@ if __name__ == '__main__':
         # Shut down launched nodes (if the launch_status is launched of course)
         if launch_status == launchStatus.LAUNCHED:
             appGui.shutdown_nodes()
-            print "Closing shutdown sequence complete!"
+            print("Closing shutdown sequence complete!")
         else:
             print("No launched nodes to shutdown; exiting.")
     except rospy.ROSInterruptException:
