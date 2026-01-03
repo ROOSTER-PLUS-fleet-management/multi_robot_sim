@@ -711,7 +711,7 @@ class GuiMainWindow(gui_launcher_node.Ui_MainWindow, QtGui.QMainWindow):
         )
         if folder:
             self.logs_folder = unicode(folder)
-            self.labelLogsFolder.setText(os.path.basename(folder))
+            self.labelLogsFolder.setText(str(os.path.basename(unicode(file_path))))
     def open_mqtt_params_file(self):
         file_path = r.get_path("rooster_fleet_manager") + "/config/mqtt_bridge_configs.yaml"
         try:
@@ -727,7 +727,7 @@ class GuiMainWindow(gui_launcher_node.Ui_MainWindow, QtGui.QMainWindow):
         )
         if file_path:
             self.gazebo_world = unicode(file_path)
-            self.labelGazeboWorld.setText(os.path.basename(file_path))
+            self.labelGazeboWorld.setText(str(os.path.basename(unicode(file_path))))
     def select_rviz_map(self):
         file_path = QtGui.QFileDialog.getOpenFileName(
             self, 
@@ -737,7 +737,7 @@ class GuiMainWindow(gui_launcher_node.Ui_MainWindow, QtGui.QMainWindow):
         )
         if file_path:
             self.rviz_map = unicode(file_path)
-            self.labelRVizMap.setText(os.path.basename(file_path))
+            self.labelRVizMap.setText(str(os.path.basename(unicode(file_path))))
     def open_locations_json_file(self):
         file_path = r.get_path("multi_robot_sim") + "/scripts/JSONtoRosparam/locations.JSON"
         try:
@@ -833,6 +833,11 @@ class GuiMainWindow(gui_launcher_node.Ui_MainWindow, QtGui.QMainWindow):
             self.mqtt_launch = roslaunch.scriptapi.ROSLaunch()
             self.mqtt_launch.parent = roslaunch.parent.ROSLaunchParent(uuid, [r.get_path("rooster_fleet_manager")+'/launch/mqtt.launch'])
             self.mqtt_launch.start()
+
+        # Voice command
+        self.voice_command_launch = roslaunch.scriptapi.ROSLaunch()
+        self.voice_command_launch.parent = roslaunch.parent.ROSLaunchParent(uuid, [r.get_path("rooster_fleet_manager")+'/launch/voice_command.launch'])
+        self.voice_command_launch.start()
 
     def shutdown_nodes(self):
         """Shuts down the launched nodes, starting with robot nodes, ending with Gazebo."""
